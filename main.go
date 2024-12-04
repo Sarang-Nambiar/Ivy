@@ -6,6 +6,8 @@ import (
 	"io/ioutil"
 	"ivy/CM"
 	"ivy/client"
+	"ivy/message"
+	"ivy/utils"
 	"os"
 	"os/signal"
 	"syscall"
@@ -30,6 +32,54 @@ func main() {
 
 			// Start the RPC server
 			go cm.StartRPCServer()
+
+			for {
+				var answer string
+				fmt.Println("Make sure you have all the clients running before starting the read and write requests.")
+				fmt.Println("Do you want to start the read and write requests from the clients? (y/n)")
+				fmt.Scanln(&answer)
+	
+				if answer == "y" {
+					nodesList := utils.ReadNodesList()
+					fmt.Printf("Nodes list: %v\n", nodesList)
+					for _, ip := range nodesList {
+						go func() {
+							_, err := utils.CallByRPC(ip, "Client.RequestPage", message.Message{})
+							if err != nil {
+								fmt.Println("Error occurred while calling RequestPage RPC: ", err)
+							}
+						}()
+					}
+					break
+				} else {
+					fmt.Println("The option to start the read and write requests will be displayed again shortly...")
+				}
+			}
+
+			// for {
+			// 	utils.ShowMenu()
+			// 	var choice int 
+			// 	fmt.Scanln(&choice)
+			// 	switch choice {
+			// 	case 1:
+			// 		// Display the records
+			// 		fmt.Printf("Records:\n")
+			// 		for key, val := range cm.Records {
+			// 			fmt.Printf("PageID: %d and Owner: %d\n", key, val.Owner.ID)
+			// 		}
+			// 	case 2:
+			// 		// Display the write queue
+			// 		fmt.Printf("Write Queue:\n")
+			// 		for _, val := range cm.WriteQueue {
+			// 			fmt.Printf("PageID: %d and Owner: %d\n", val.PageID, val.From.ID)
+			// 		}
+			// 	default:
+			// 		fmt.Printf("Invalid choice: %d\n", choice)
+			// 	}
+			// }
+
+			// Display options to show the records in the central manager
+
 		case "-b":
 			// Start the backup central manager
 
@@ -42,7 +92,7 @@ func main() {
 
 		case "-cl":
 			// Start the client
-			nodesList := ReadNodesList()
+			nodesList := utils.ReadNodesList()
 			client := client.Client{
 				ID: len(nodesList),
 				IP: client.LOCALHOST + fmt.Sprint(8002+len(nodesList)),
@@ -73,7 +123,7 @@ func main() {
 				fmt.Println("Shutting down...")
 
 				// Remove the node from the list
-				nodesList := ReadNodesList()
+				nodesList := utils.ReadNodesList()
 
 				delete(nodesList, client.ID) // remove the element that left the network from the nodesList
 
@@ -92,20 +142,4 @@ func main() {
 			return
 		}
 	select {}
-}
-
-func ReadNodesList() map[int]string {
-	jsonFile, err := os.Open("nodes-list.json")
-	if err != nil {
-		fmt.Println("Error opening nodes-list.json file:", err)
-	}
-	defer jsonFile.Close()
-
-	byteValue, _ := ioutil.ReadAll(jsonFile)
-
-	var nodesList map[int]string
-
-	json.Unmarshal(byteValue, &nodesList) // Puts the byte value into the nodesList map
-
-	return nodesList
 }

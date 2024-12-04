@@ -5,4 +5,5 @@ type Message struct {
 	ID int
 	IP string // IP address of the sender of the request
 	PageID int
+	Permission string
 }
