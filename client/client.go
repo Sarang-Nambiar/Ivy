@@ -15,6 +15,7 @@ type Client struct {
 	ID     int
 	IP     string
 	Cached map[int]Page
+	ServerIP string
 }
 
 type Page struct {
@@ -38,7 +39,7 @@ const (
 	LOCALHOST = "127.0.0.1:"
 	CENTRALIP = LOCALHOST + "8000"
 	BACKUPIP  = LOCALHOST + "8001"
-	timeInterval = 6
+	timeInterval = 15
 )
 
 // Function to start the RPC server
@@ -80,7 +81,7 @@ func (c *Client)RequestPage(msg message.Message, reply *message.Message) error {
 					fmt.Printf("[NODE-%d] Page %d is already in the cache with permission %s\n", c.ID, pageID, val.Permission)
 					break
 				}
-				_, err := utils.CallByRPC(CENTRALIP, "CentralManager.ReceiveRequest", message.Message{Type: READ, ID: c.ID, IP: c.IP, PageID: pageID})
+				_, err := utils.CallByRPC(c.ServerIP, "CentralManager.ReceiveRequest", message.Message{Type: READ, ID: c.ID, IP: c.IP, PageID: pageID})
 				if err != nil {
 					fmt.Printf("[NODE-%d] Error occurred while requesting READ access for page %d: %s\n", c.ID, pageID, err)
 				}
@@ -94,7 +95,7 @@ func (c *Client)RequestPage(msg message.Message, reply *message.Message) error {
 				
 				// TODO: check if the response from this RPC call is required
 				go func() {
-					_, err := utils.CallByRPC(CENTRALIP, "CentralManager.ReceiveRequest", message.Message{Type: WRITE, ID: c.ID, IP: c.IP, PageID: pageID})
+					_, err := utils.CallByRPC(c.ServerIP, "CentralManager.ReceiveRequest", message.Message{Type: WRITE, ID: c.ID, IP: c.IP, PageID: pageID})
 					if err != nil {
 						fmt.Printf("[NODE-%d] Error occurred while requesting WRITE access for page %d: %s\n", c.ID, pageID, err)
 					}
@@ -113,13 +114,13 @@ func (c *Client) ReceiveRequest(msg message.Message, reply *message.Message) err
 
 		if msg.Permission == WRITE {
 			// Send the confirmation to the central manager
-			_, err := utils.CallByRPC(CENTRALIP, "CentralManager.ReceiveRequest", message.Message{Type: WRITE_CONFIRMATION, ID: c.ID, IP: c.IP, PageID: msg.PageID})
+			_, err := utils.CallByRPC(c.ServerIP, "CentralManager.ReceiveRequest", message.Message{Type: WRITE_CONFIRMATION, ID: c.ID, IP: c.IP, PageID: msg.PageID})
 			if err != nil {
 				return fmt.Errorf("error occurred while calling the central manager: %s", err)
 			}
 		} else {
 			// Send the confirmation to the central manager
-			_, err := utils.CallByRPC(CENTRALIP, "CentralManager.ReceiveRequest", message.Message{Type: READ_CONFIRMATION, ID: c.ID, IP: c.IP, PageID: msg.PageID})
+			_, err := utils.CallByRPC(c.ServerIP, "CentralManager.ReceiveRequest", message.Message{Type: READ_CONFIRMATION, ID: c.ID, IP: c.IP, PageID: msg.PageID})
 			if err != nil {
 				return fmt.Errorf("error occurred while calling the central manager: %s", err)
 			}
@@ -155,7 +156,7 @@ func (c *Client) ReceiveRequest(msg message.Message, reply *message.Message) err
 		delete(c.Cached, msg.PageID) // removed the cached page from the client
 		
 		// Send the confirmation to the central manager
-		_, err := utils.CallByRPC(CENTRALIP, "CentralManager.ReceiveRequest", message.Message{Type: INVALIDATE_CONFIRMATION, ID: msg.ID, IP: msg.IP, PageID: msg.PageID})
+		_, err := utils.CallByRPC(c.ServerIP, "CentralManager.ReceiveRequest", message.Message{Type: INVALIDATE_CONFIRMATION, ID: msg.ID, IP: msg.IP, PageID: msg.PageID})
 		if err != nil {
 			return fmt.Errorf("error occurred while calling the central manager: %s", err)
 		}
@@ -163,10 +164,16 @@ func (c *Client) ReceiveRequest(msg message.Message, reply *message.Message) err
 	return nil
 }
 
+// Updating the server IP one of the CMs are down
+func (c *Client) UpdateServerIP(msg message.Message, reply *message.Message) error {
+	c.ServerIP = msg.IP
+	return nil
+}
+
 // Prototype function to find the alive CM 
 func (c *Client) FindAliveCM() string {
 	// Check if the central manager is alive
-	_, err := utils.CallByRPC(CENTRALIP, "CentralManager.ReceiveRequest", message.Message{})
+	_, err := utils.CallByRPC(c.ServerIP, "CentralManager.ReceiveRequest", message.Message{})
 	if err != nil {
 		_, err = utils.CallByRPC(BACKUPIP, "CentralManager.ReceiveRequest", message.Message{})
 		if err != nil {
@@ -175,7 +182,7 @@ func (c *Client) FindAliveCM() string {
 		}
 		return BACKUPIP
 	}
-	return CENTRALIP
+	return c.ServerIP
 }
 
 // coin flip to choose read or write request
@@ -183,6 +190,15 @@ func (c *Client) coinFlip() string{
 	rand.Seed(time.Now().UnixNano()) // Making sure this is random using a unique seed
 	outcome := rand.Intn(2)
 	if outcome == 0 {
+		return READ
+	}
+	return WRITE
+}
+
+func (c *Client) percentageBasedFlip(readPercentage int) string {
+	rand.Seed(time.Now().UnixNano())
+	outcome := rand.Intn(100)
+	if outcome < readPercentage {
 		return READ
 	}
 	return WRITE

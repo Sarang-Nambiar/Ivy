@@ -41,7 +41,6 @@ func ReadNodesList() map[int]string {
 	return nodesList
 }
 
-// Add kill node and reboot over here
 func ShowMenu(){
 	red := "\033[31m"  // ANSI code for red text
 	reset := "\033[0m" // ANSI code to reset color
@@ -50,5 +49,7 @@ func ShowMenu(){
 	fmt.Println(red + "\t\tMENU" + reset)
 	fmt.Println(red + "Press 1 to see the records" + reset)
 	fmt.Println(red + "Press 2 to see the Write queue" + reset)
+	fmt.Println(red + "Press 3 to kill current node" + reset)
+	fmt.Println(red + "Press 4 to reboot current node" + reset)
 	fmt.Println(red + "--------------------------------" + reset)
 }

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 func main() {
@@ -56,29 +57,40 @@ func main() {
 				}
 			}
 
-			// for {
-			// 	utils.ShowMenu()
-			// 	var choice int 
-			// 	fmt.Scanln(&choice)
-			// 	switch choice {
-			// 	case 1:
-			// 		// Display the records
-			// 		fmt.Printf("Records:\n")
-			// 		for key, val := range cm.Records {
-			// 			fmt.Printf("PageID: %d and Owner: %d\n", key, val.Owner.ID)
-			// 		}
-			// 	case 2:
-			// 		// Display the write queue
-			// 		fmt.Printf("Write Queue:\n")
-			// 		for _, val := range cm.WriteQueue {
-			// 			fmt.Printf("PageID: %d and Owner: %d\n", val.PageID, val.From.ID)
-			// 		}
-			// 	default:
-			// 		fmt.Printf("Invalid choice: %d\n", choice)
-			// 	}
-			// }
+			go cm.StartBackup()
 
-			// Display options to show the records in the central manager
+			for {
+				utils.ShowMenu()
+				var choice int 
+				fmt.Scanln(&choice)
+				switch choice {
+				case 1:
+					// Display the records
+					fmt.Printf("Records:\n")
+					for key, val := range cm.Records {
+						fmt.Printf("PageID: %d, Owner: %d and Copies: %v\n", key, val.Owner.ID, val.Copies)
+					}
+				case 2:
+					// Display the write queue
+					fmt.Printf("Write Queue:\n")
+					for _, val := range cm.WriteQueue {
+						fmt.Printf("PageID: %d and Owner: %d\n", val.PageID, val.From.ID)
+					}
+				case 3:
+					// Kill the current node
+					fmt.Printf("Killing the current node...\n")
+					os.Exit(0) // Gracefully exit the program
+				case 4: 
+					// Reboot the current node
+					fmt.Printf("Rebooting the current node...\n")
+					cm.IsRebooting = true
+					time.Sleep(10 * time.Second)
+					cm.IsRebooting = false
+					fmt.Printf("Node has been rebooted.\n")
+				default:
+					fmt.Printf("Invalid choice: %d\n", choice)
+				}
+			}
 
 		case "-b":
 			// Start the backup central manager
@@ -89,7 +101,40 @@ func main() {
 			}
 
 			go cm.StartRPCServer()
+			go cm.HealthCheck() // Health check for the primary central manager
 
+			for {
+				utils.ShowMenu()
+				var choice int 
+				fmt.Scanln(&choice)
+				switch choice {
+				case 1:
+					// Display the records
+					fmt.Printf("Records:\n")
+					for key, val := range cm.Records {
+						fmt.Printf("PageID: %d, Owner: %d and Copies: %v\n", key, val.Owner.ID, val.Copies)
+					}
+				case 2:
+					// Display the write queue
+					fmt.Printf("Write Queue:\n")
+					for _, val := range cm.WriteQueue {
+						fmt.Printf("PageID: %d and Owner: %d\n", val.PageID, val.From.ID)
+					}
+				case 3:
+					// Kill the current node
+					fmt.Printf("Killing the current node...\n")
+					os.Exit(0) // Gracefully exit the program
+				case 4: 
+					// Reboot the current node
+					fmt.Printf("Rebooting the current node...\n")
+					cm.IsRebooting = true
+					time.Sleep(10 * time.Second)
+					cm.IsRebooting = false
+					fmt.Printf("Node has been rebooted.\n")
+				default:
+					fmt.Printf("Invalid choice: %d\n", choice)
+				}
+			}
 		case "-cl":
 			// Start the client
 			nodesList := utils.ReadNodesList()
@@ -97,6 +142,7 @@ func main() {
 				ID: len(nodesList),
 				IP: client.LOCALHOST + fmt.Sprint(8002+len(nodesList)),
 				Cached: make(map[int]client.Page),
+				ServerIP: client.CENTRALIP, // assigning the primary central manager IP first
 			}
 			
 			nodesList[client.ID] = client.IP
@@ -138,7 +184,7 @@ func main() {
 				os.Exit(0)
 			}()
 		default:
-			fmt.Printf("Invalid argument: %s\n", args[1])
+			fmt.Println("Usage: go run main.go -cm OR go run main.go -cl OR go run main.go -b")
 			return
 		}
 	select {}
