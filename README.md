@@ -3,7 +3,7 @@
 ## Understanding the implementation flow:
 1. The core implementation of Integrated shared Virtual memory at Yale has more or less remained the same. The only changes made are the way the Read and Write requests are handled when the server has no records of previous requests:
     - For Read, if the records stored at the central manager server are empty, then the server returns a Page not found error as shown below:
-    <!-- put screenshot of the error here -->
+    ![Screenshot 2024-12-05 202115](https://github.com/user-attachments/assets/bfd673eb-852b-491d-a67a-3637d0a5a056)
     - For Write, if the records stored at the central manager server are empty, then the server creates a new record for requested page and grants the client Write permission for that page.
 2. For the Backup flow, the primary central manager sends backup messages over to the backup central manager every 5 seconds(configurable). The backup central manager updates its metadata and does a health check on the primary central manager every 5 seconds(configurable). If the primary central manager is down, the backup central manager takes over as the primary central manager. If the backup central manager detects that the primary central manager is back alive, it returns control over to the primary central manager.
 
@@ -28,16 +28,18 @@
 The terminal output for all the nodes in the network follow a similar format:
 [Node Type] [Node ID(if client)] [Event]
 
-<!-- show sample output here -->
+![Screenshot 2024-12-12 164507](https://github.com/user-attachments/assets/1c2c78f6-67a8-4a10-9cac-7116e5cd07be)
 
 ## Things to consider:
 1. Currently, the client can request in either a completely randomized read/write request or a percentage based read/write request. The percentage based read/write request can be configured in client.go by providing the percentage of READ requests to be made by the client and the rest will be WRITE requests. You can choose which type of request to make by commenting out the other type of request in the client.go file as shown:
 
-<!-- show a screenshot of the client.go read/write request configuration. -->
+![Screenshot 2024-12-11 213303](https://github.com/user-attachments/assets/6c506e2f-b10b-44f0-aebd-87e7d5e8ab13)
 
 2. The read/write requests end after 10 requests of either type have been successfully completed. After all the requests from all the nodes are completed, the central manager which is alive will print out the average time taken for each type of request as shown below:
 
-<!-- show a screenshot of the average time taken for each type of request. -->
+![image](https://github.com/user-attachments/assets/4ee7adac-b642-4221-86f1-40c8fa787a2b)
+
+![Screenshot 2024-12-11 213242](https://github.com/user-attachments/assets/ad429482-8184-4e07-aecd-9094d57750bd)
 
 3. Time taken to get the page with required permission from the cache isn't taken into account in the average time calculation.
 
