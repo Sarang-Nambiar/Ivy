@@ -14,7 +14,7 @@
     ```powershell
     ivy.exe -cm
     ```
-    - Client - -cl
+    - Client
     ```powershell
     ivy.exe -cl
     ```
