@@ -42,7 +42,6 @@ func main() {
 	
 				if answer == "y" {
 					nodesList := utils.ReadNodesList()
-					fmt.Printf("Nodes list: %v\n", nodesList)
 					for _, ip := range nodesList {
 						go func() {
 							_, err := utils.CallByRPC(ip, "Client.RequestPage", message.Message{})
@@ -57,7 +56,7 @@ func main() {
 				}
 			}
 
-			go cm.StartBackup()
+			go cm.StartBackup() // Comment this to make this into a basic Ivy implementation
 
 			for {
 				utils.ShowMenu()
@@ -84,7 +83,7 @@ func main() {
 					// Reboot the current node
 					fmt.Printf("Rebooting the current node...\n")
 					cm.IsRebooting = true
-					time.Sleep(10 * time.Second)
+					time.Sleep(12 * time.Second)
 					cm.IsRebooting = false
 					fmt.Printf("Node has been rebooted.\n")
 				default:
@@ -143,6 +142,7 @@ func main() {
 				IP: client.LOCALHOST + fmt.Sprint(8002+len(nodesList)),
 				Cached: make(map[int]client.Page),
 				ServerIP: client.CENTRALIP, // assigning the primary central manager IP first
+				StartTime: time.Now(),
 			}
 			
 			nodesList[client.ID] = client.IP

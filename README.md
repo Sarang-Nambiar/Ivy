@@ -30,6 +30,17 @@ The terminal output for all the nodes in the network follow a similar format:
 
 <!-- show sample output here -->
 
+## Things to consider:
+1. Currently, the client can request in either a completely randomized read/write request or a percentage based read/write request. The percentage based read/write request can be configured in client.go by providing the percentage of READ requests to be made by the client and the rest will be WRITE requests. You can choose which type of request to make by commenting out the other type of request in the client.go file as shown:
+
+<!-- show a screenshot of the client.go read/write request configuration. -->
+
+2. The read/write requests end after 10 requests of either type have been successfully completed. After all the requests from all the nodes are completed, the central manager which is alive will print out the average time taken for each type of request as shown below:
+
+<!-- show a screenshot of the average time taken for each type of request. -->
+
+3. Time taken to get the page with required permission from the cache isn't taken into account in the average time calculation.
+
 ## Is the current Fault tolerant implementation of Ivy sequentially consistent?
 To maintain sequential consistency, two conditions must be met:
 1. All operations in one machine are executed in order.
@@ -37,3 +48,133 @@ To maintain sequential consistency, two conditions must be met:
 
 Condition 1 is met to by default since it is a programming language. For condition 2, the writes from all the clients are appended to a queue based on whatever request arrived first at the central manager. The next write operation is not executed until the first write operation in the queue is completed. This ensures some total ordering to the write operations. When the primary central manager goes down, the backup central manager takes over and continues to maintain the total ordering from the backed up metadata. Hence, the current fault tolerant implementation of Ivy is sequentially consistent.
 
+## Scenario 1: Without any faults, Comparison of the performance of Ivy with and without the backup central manager with randomized read and write requests.
+
+Since there are no faults, the performance of Ivy with and without the backup central manager is around the same for both cases:
+
+Basic Ivy:
+| Request Type | Highest     | Lowest     | Average    |
+|--------------|-------------|------------|------------|
+| READ         | 5.6587ms    | 2.7883ms   | 4.7350ms   |
+| WRITE        | 32.9928ms   | 2.7268ms   | 14.2624ms  |
+
+Fault Tolerant Ivy:
+| Request Type | Highest     | Lowest     | Average    |
+|--------------|-------------|------------|------------|
+| READ         | 4.5815ms    | 2.792ms    | 8.6842ms   |
+| WRITE        | 33.3176ms   | 3.9434ms   | 16.7383ms  |
+
+## Scenario 2: Without any faults, Comparison of the performance of Ivy with and without the backup central manager for read-intensive and write-intensive workloads.
+
+### Basic Ivy:
+
+Read Intensive(90% read, 10% write):
+| Request Type | Average   |
+|--------------|-----------|
+| READ         | 4.8558ms  |
+| WRITE        | 10.5462ms |
+
+Write Intensive(10% read, 90% write):
+| Request Type | Average   |
+|--------------|-----------|
+| READ         | 4.6782ms  |
+| WRITE        | 13.7364ms |
+
+### Fault Tolerant Ivy:
+
+Read Intensive(90% read, 10% write):
+| Request Type | Average   |
+|--------------|-----------|
+| READ         | 5.5431ms  |
+| WRITE        | 13.2370ms |
+
+Write Intensive(10% read, 90% write):
+| Request Type | Average   |
+|--------------|-----------|
+| READ         | 4.8347ms  |
+| WRITE        | 14.0659ms |
+
+## Scenario 3: In the presence of a single fault, Primary CM goes down or restarts randomly.
+
+### Primary CM goes down:
+
+For Randomized Read/Write:
+| Request Type | Average   |
+|--------------|-----------|
+| READ         | 4.6193ms  |
+| WRITE        | 12.3003ms |
+
+For Read Intensive(90% read, 10% write):
+| Request Type | Average   |
+|--------------|-----------|
+| READ         | 4.1269ms  |
+| WRITE        | 4.9472ms  |
+
+For Write Intensive(10% read, 90% write):
+| Request Type | Average   |
+|--------------|-----------|
+| READ         | 4.2766ms  |
+| WRITE        | 14.8333ms |
+
+### Primary CM restarts:
+
+For Randomized Read/Write:
+| Request Type | Average   |
+|--------------|-----------|
+| READ         | 4.5351ms  |
+| WRITE        | 9.4223ms  |
+
+For Read Intensive(90% read, 10% write):
+| Request Type | Average      |
+|--------------|--------------|
+| READ         | 4.3412ms  |
+| WRITE        | 7.9190ms  |
+
+For Write Intensive(10% read, 90% write):
+| Request Type | Average   |
+|--------------|-----------|
+| READ         | 5.9715ms  |
+| WRITE        | 12.0355ms |
+
+## Scenario 4: In the presence of multiple faults, Primary CM goes down and restarts randomly multiple times.
+
+For Randomized Read/Write:
+| Request Type | Average   |
+|--------------|-----------|
+| READ         | 4.3343ms  |
+| WRITE        | 9.8712ms  |
+
+For Read Intensive(90% read, 10% write):
+| Request Type | Average   |
+|--------------|-----------|
+| READ         | 4.2669ms  |
+| WRITE        | 8.1538ms  |
+
+For Write Intensive(10% read, 90% write):
+| Request Type | Average   |
+|--------------|-----------|
+| READ         | 6.2179ms  |
+| WRITE        | 14.0183ms |
+
+## Scenario 5: In the presence of multiple faults, Primary CM and backup CM goes down and restarts randomly multiple times.
+
+For Randomized Read/Write:
+| Request Type | Average   |
+|--------------|-----------|
+| READ         | 4.5989ms  |
+| WRITE        | 11.2581ms |
+
+For Read Intensive(90% read, 10% write):
+| Request Type | Average   |
+|--------------|-----------|
+| READ         | 4.5716ms  |
+| WRITE        | 9.8187ms  |
+
+For Write Intensive(10% read, 90% write):
+| Request Type | Average   |
+|--------------|-----------|
+| READ         | 5.4770ms  |
+| WRITE        | 13.6728ms |
+
+## Conclusion:
+The performance of Ivy with or without the backup central manager is around the same even in the presence of faults for all the scenarios mentioned as the metadata is always synchronized between the primary and backup central managers. The only delay that could occur is when the central manager declaring that it is taking over as the "primary" central manager.

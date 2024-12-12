@@ -47,9 +47,9 @@ func ShowMenu(){
 
 	fmt.Println(red + "--------------------------------" + reset)
 	fmt.Println(red + "\t\tMENU" + reset)
-	fmt.Println(red + "Press 1 to see the records" + reset)
-	fmt.Println(red + "Press 2 to see the Write queue" + reset)
-	fmt.Println(red + "Press 3 to kill current node" + reset)
-	fmt.Println(red + "Press 4 to reboot current node" + reset)
+	fmt.Println(red + "Enter 1 to see the records" + reset)
+	fmt.Println(red + "Enter 2 to see the Write queue" + reset)
+	fmt.Println(red + "Enter 3 to kill current node" + reset)
+	fmt.Println(red + "Enter 4 to reboot current node" + reset)
 	fmt.Println(red + "--------------------------------" + reset)
 }

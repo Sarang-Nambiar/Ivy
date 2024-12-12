@@ -11,6 +11,12 @@ import (
 	"time"
 )
 
+var (
+	TotalReadTime float64
+	TotalWriteTime float64
+	count map[string]int = make(map[string]int, 0)
+)
+
 type CentralManager struct {
 	IP      string
 	Records map[int]Record // Map of page id to record
@@ -40,6 +46,7 @@ const (
 	READ = "READ"
 	WRITE = "WRITE"
 	PING = "PING"
+	REQ = "REQ"
 	READ_FORWARD  = "READ_FORWARD"
 	WRITE_FORWARD = "WRITE_FORWARD"
 	RECEIVE_PAGE = "RECEIVE_PAGE"
@@ -51,8 +58,8 @@ const (
 	LOCALHOST = "127.0.0.1:"
 	CENTRALIP = LOCALHOST + "8000"
 	BACKUPIP  = LOCALHOST + "8001"
-	backupTime = 5 // Time interval for backing up the central manager metadata
-	healthCheckTime = 5 // Time interval for health check of the primary central manager
+	backupTime = 1 // Time interval for backing up the central manager metadata
+	healthCheckTime = 3 // Time interval for health check of the primary central manager
 )
 
 // TODOS: Implement case when the primary central manager goes for rebooting
@@ -93,7 +100,9 @@ const (
 }
 
 func (cm *CentralManager) ReceiveRequest(msg message.Message, reply *message.Message) error {
+	cm.Lock.Lock()
 	val, ok := cm.Records[msg.PageID]
+	cm.Lock.Unlock()
 	switch msg.Type {
 	case PING: 
 		// fmt.Printf("[CENTRAL-MANAGER] Received PING from client %d\n", msg.ID)
@@ -107,7 +116,9 @@ func (cm *CentralManager) ReceiveRequest(msg message.Message, reply *message.Mes
 			// Forward the read request to the owner of the page
 			msg.Type = READ_FORWARD
 			val.Copies = append(val.Copies, Pointer{ID: msg.ID, IP: msg.IP})
+			cm.Lock.Lock()
 			cm.Records[msg.PageID] = val
+			cm.Lock.Unlock()
 			// fmt.Printf("[CENTRAL-MANAGER] Forwarding READ request for page %d to client %d. Copies: %v\n", msg.PageID, val.Owner.ID, val.Copies)
 			_, err := utils.CallByRPC(val.Owner.IP, "Client.ReceiveRequest", msg)
 			if err != nil {
@@ -124,13 +135,9 @@ func (cm *CentralManager) ReceiveRequest(msg message.Message, reply *message.Mes
 		// if so, then forward the request to the owner of the page
 		// invalidate the cache of the copies of this page
 		// if the page does not exist, then create a new record for this page
-
-		cm.Lock.Lock()
-		defer cm.Lock.Unlock()
 		if cm.WriteQueue == nil {
 			cm.WriteQueue = []WriteRequest{}
 		}
-
 		// fmt.Printf("[CENTRAL-MANAGER] Received WRITE for page %d from client %d\n", msg.PageID, msg.ID)
 
 		if len(cm.WriteQueue) > 0 {
@@ -138,6 +145,7 @@ func (cm *CentralManager) ReceiveRequest(msg message.Message, reply *message.Mes
 			if head.From.ID != msg.ID {
 				// if the current request is not from the head, then add to the queue
 				cm.WriteQueue = append(cm.WriteQueue, WriteRequest{From: Pointer{ID: msg.ID, IP: msg.IP}, PageID: msg.PageID})
+
 				// fmt.Printf("[CENTRAL-MANAGER] Added WRITE request to the queue. Queue: %v\n", cm.WriteQueue)
 				return nil
 			} else {
@@ -158,16 +166,17 @@ func (cm *CentralManager) ReceiveRequest(msg message.Message, reply *message.Mes
 		// Remove the head of the write queue
 		// Check if there are any more in the queue, then do a write operation for the next one
 
-		cm.Lock.Lock()
-		defer cm.Lock.Unlock()
 		fmt.Printf("[CENTRAL-MANAGER] Received WRITE_CONFIRMATION for page %d from client %d\n", msg.PageID, msg.ID)
 		if len(cm.WriteQueue) > 0 && cm.WriteQueue[0].From.ID == msg.ID {
 			cm.WriteQueue = cm.WriteQueue[1:] // Remove the first element from the queue
 		}
+
+		cm.Lock.Lock()
 		cm.Records[msg.PageID] = Record{ // Initialize the new owner of the page
 			Copies: []Pointer{},
 			Owner: Pointer{ID: msg.ID, IP: msg.IP},
 		}
+		cm.Lock.Unlock()
 
 		if len(cm.WriteQueue) > 0 {
 			// if there are more requests in the queue, then do the write operation for the next one
@@ -182,7 +191,6 @@ func (cm *CentralManager) ReceiveRequest(msg message.Message, reply *message.Mes
 
 	case INVALIDATE_CONFIRMATION: // Received when the client has invalidated the cache
 		// Forward the write request to the owner of the page
-		// TODO: Come back to this later
 		fmt.Printf("[CENTRAL-MANAGER] Received INVALIDATE_CONFIRMATION for page %d from client %d\n", msg.PageID, msg.ID)
 	}
 
@@ -190,8 +198,10 @@ func (cm *CentralManager) ReceiveRequest(msg message.Message, reply *message.Mes
 }
 
 // Function to perform write operation flow
-func (cm *CentralManager) WriteOP(msg message.Message) {
+func (cm *CentralManager) WriteOP(msg message.Message){
+	cm.Lock.Lock()
 	val, ok := cm.Records[msg.PageID]
+	cm.Lock.Unlock()
 	if ok {
 		// Page found in one of the clients
 		// Invalidate the cache of the copies of this page and make the prev owner send the current copy with write perms to new owner
@@ -200,7 +210,7 @@ func (cm *CentralManager) WriteOP(msg message.Message) {
 			// fmt.Printf("[CENTRAL-MANAGER] Forwarding INVALIDATE_CACHE request to client %d\n", copy.ID)
 			_, err := utils.CallByRPC(copy.IP, "Client.ReceiveRequest", msg)
 			if err != nil {
-				fmt.Printf("error occurred while calling the client: %s", err)
+				fmt.Printf("error occurred while INVALIDATE_CACHE: %s", err)
 			}
 		}
 
@@ -208,23 +218,26 @@ func (cm *CentralManager) WriteOP(msg message.Message) {
 		msg.Type = WRITE_FORWARD
 		_, err := utils.CallByRPC(val.Owner.IP, "Client.ReceiveRequest", msg)
 		if err != nil {
-			fmt.Printf("error occurred while calling the client: %s", err)
+			fmt.Printf("error occurred while calling the client: %s", err)	
 		}
 
 	} else {
 		// Page not found in any of the records
 		// Create a new record for this page
 		// Make the owner of the page the one who is writing
+
 		go func() {
 			_, err := utils.CallByRPC(msg.IP, "Client.ReceiveRequest", message.Message{Type: RECEIVE_PAGE, PageID: msg.PageID, Permission: WRITE})
 			if err != nil {
 				fmt.Printf("error occurred while calling the client: %s", err)
 			}
-			cm.Records[msg.PageID] = Record{
-				Copies: []Pointer{},
-				Owner: Pointer{ID: msg.ID, IP: msg.IP},
-			}
 		}()
+		cm.Lock.Lock()
+		cm.Records[msg.PageID] = Record{
+			Copies: []Pointer{},
+			Owner: Pointer{ID: msg.ID, IP: msg.IP},
+		}
+		cm.Lock.Unlock()
 	}
 }
 
@@ -298,7 +311,7 @@ func (cm *CentralManager) StartBackup() {
 		var reply SyncMessage
 		err = client.Call("CentralManager.Backup", msg, &reply)
 		if err != nil {
-			fmt.Printf("[CENTRAL-MANAGER] Error in calling %s: %s", "CentralManager.Backup", err)
+			// fmt.Printf("[CENTRAL-MANAGER] Error in calling %s: %s", "CentralManager.Backup", err)
 		}
 		client.Close()
 
@@ -307,12 +320,49 @@ func (cm *CentralManager) StartBackup() {
 }
 
 func (cm *CentralManager) Backup(msg SyncMessage, reply *SyncMessage) error {
-	fmt.Printf("[CENTRAL-MANAGER] Received backup message from primary central manager\n")
+	// fmt.Printf("[CENTRAL-MANAGER] Received backup message from primary central manager\n")
 	cm.Records = msg.Records
 	cm.WriteQueue = msg.WriteQueue
 	return nil
 }
 
 func (cm *CentralManager) Ping(msg message.Message, reply *message.Message) error {
+	return nil
+}
+
+func (cm *CentralManager) CalculateAverageResponseTime(msg message.Message, reply *message.Message) error {
+	green := "\033[32m"  // ANSI code for red text
+	reset := "\033[0m" // ANSI code to reset color
+	// Calculate the average response time for read and write requests
+	// Check if all the responses for the avg time have been received
+	// If so, then calculate the average response time
+	cm.Lock.Lock()
+	TotalReadTime += msg.AvgReadPerNode
+	TotalWriteTime += msg.AvgWritePerNode
+	if _, ok := count[REQ]; !ok {
+		count[REQ] = 0
+	}
+	count[REQ]++
+	if msg.AvgReadPerNode != 0 {
+		if _, ok := count[READ]; !ok {
+			count[READ] = 0
+		}
+		count[READ]++
+	}
+	if msg.AvgWritePerNode != 0 {
+		if _, ok := count[WRITE]; !ok {
+			count[WRITE] = 0
+		}
+		count[WRITE]++
+	}
+	cm.Lock.Unlock()
+
+	if count[REQ] == 10 {
+		avgReadTime := TotalReadTime / float64(count[READ])
+		avgWriteTime := TotalWriteTime / float64(count[WRITE])
+		fmt.Printf(green + "[CENTRAL-MANAGER] Average read time: %f ms\n" + reset, avgReadTime * 1000)
+		fmt.Printf(green + "[CENTRAL-MANAGER] Average write time: %f ms\n" + reset, avgWriteTime * 1000)
+	}
+
 	return nil
 }
